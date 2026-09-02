@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Panorama — 360 Tour Builder</title>
+<style>
+  :root{
+    --bg:#14161A;
+    --panel:#1B1E24;
+    --panel-2:#20242C;
+    --border:#2A2E37;
+    --text:#E8E6E1;
+    --text-dim:#8B8F99;
+    --accent:#4FD1C5;
+    --accent-dim:#337871;
+    --danger:#E0665A;
+    --radius:6px;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  #app{ display:flex; height:100vh; width:100vw; }
+
+  /* ---------- Sidebar ---------- */
+  #sidebar{
+    width:280px; min-width:280px;
+    background:var(--panel);
+    border-right:1px solid var(--border);
+    display:flex; flex-direction:column;
+    z-index:20;
+    transition:margin-left .2s ease;
+  }
+  #sidebar.collapsed{ margin-left:-280px; }
+  .brand{
+    padding:18px 16px 14px 16px;
+    border-bottom:1px solid var(--border);
+  }
+  .brand h1{
+    font-size:15px; font-weight:600; margin:0 0 2px 0; letter-spacing:.2px;
+  }
+  .brand p{ margin:0; font-size:12px; color:var(--text-dim); }
+
+  .scene-list{ flex:1; overflow-y:auto; padding:10px; }
+  .scene-item{
+    display:flex; align-items:center; gap:8px;
+    padding:9px 10px; border-radius:var(--radius);
+    margin-bottom:4px; cursor:pointer;
+    border:1px solid transparent;
+    font-size:13px;
+  }
+  .scene-item:hover{ background:var(--panel-2); }
+  .scene-item.active{
+    background:rgba(79,209,197,0.10);
+    border-color:var(--accent-dim);
+  }
+  .scene-thumb{
+    width:34px; height:34px; border-radius:5px; flex:none;
+    background:#0E1013; overflow:hidden; position:relative;
+    border:1px solid var(--border);
+    display:flex; align-items:center; justify-content:center;
+  }
+  .scene-thumb video{ width:100%; height:100%; object-fit:cover; pointer-events:none; }
+  .scene-thumb svg{ width:14px; height:14px; opacity:.4; }
+  .scene-name{
+    flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font-weight:500;
+  }
+  .scene-count{ font-size:11px; color:var(--text-dim); flex:none; }
+  .scene-item input.rename{
+    flex:1; background:transparent; border:none; color:var(--text);
+    font-size:13px; font-weight:500; font-family:inherit; outline:none;
+    border-bottom:1px solid var(--accent);
+  }
+
+  .add-scene-btn{
+    margin:2px 10px 10px 10px;
+    padding:9px; border-radius:var(--radius);
+    border:1px dashed var(--border);
+    background:transparent; color:var(--text-dim);
+    font-size:12.5px; cursor:pointer; text-align:center;
+  }
+  .add-scene-btn:hover{ border-color:var(--accent-dim); color:var(--text); }
+
+  .sidebar-footer{
+    border-top:1px solid var(--border);
+    padding:10px; display:flex; gap:6px;
+  }
+  .sidebar-footer button{ flex:1; }
+
+  /* ---------- Buttons ---------- */
+  button{
+    font-family:inherit; font-size:12.5px; font-weight:500;
+    padding:8px 10px; border-radius:var(--radius);
+    border:1px solid var(--border); background:var(--panel-2); color:var(--text);
+    cursor:pointer;
+  }
+  button:hover{ border-color:#3A3F4B; }
+  button:active{ transform:translateY(1px); }
+  button.primary{ background:var(--accent); border-color:var(--accent); color:#0A1413; font-weight:600; }
+  button.primary:hover{ background:#5FDBD0; }
+  button.ghost{ background:transparent; }
+  button.danger-text{ background:transparent; color:var(--danger); border-color:transparent; }
+  button.danger-text:hover{ color:#FF8478; }
+  button:disabled{ opacity:.4; cursor:not-allowed; }
+
+  /* ---------- Viewport ---------- */
+  #viewport{
+    position:relative; flex:1; overflow:hidden;
+    background:radial-gradient(circle at 50% 40%, #1a1d23 0%, #0c0d10 100%);
+  }
+  #canvas-holder{ position:absolute; inset:0; cursor:grab; }
+  #canvas-holder.dragging{ cursor:grabbing; }
+  #canvas-holder.edit-mode{ cursor:crosshair; }
+
+  #empty-state{
+    position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; text-align:center; gap:14px;
+    padding:20px;
+  }
+  #empty-state h2{ font-size:17px; font-weight:600; margin:0; }
+  #empty-state p{ font-size:13px; color:var(--text-dim); margin:0; max-width:340px; line-height:1.5; }
+
+  /* ---------- Top bar ---------- */
+  #topbar{
+    position:absolute; top:0; left:0; right:0;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:12px 16px; z-index:15;
+    pointer-events:none;
+  }
+  #topbar > *{ pointer-events:auto; }
+  .topbar-group{ display:flex; align-items:center; gap:8px; }
+  #scene-title{
+    background:rgba(20,22,26,0.7); backdrop-filter:blur(6px);
+    padding:7px 12px; border-radius:20px; font-size:12.5px; font-weight:600;
+    border:1px solid var(--border);
+  }
+  #sidebar-toggle{
+    background:rgba(20,22,26,0.7); backdrop-filter:blur(6px);
+    border-radius:20px; padding:7px 10px;
+  }
+  .mode-pill{
+    display:flex; background:rgba(20,22,26,0.7); backdrop-filter:blur(6px);
+    border:1px solid var(--border); border-radius:20px; padding:3px;
+  }
+  .mode-pill button{
+    border:none; background:transparent; border-radius:16px; padding:6px 12px;
+  }
+  .mode-pill button.active{ background:var(--accent); color:#0A1413; font-weight:600; }
+
+  /* ---------- Bottom controls ---------- */
+  #controls{
+    position:absolute; left:0; right:0; bottom:0;
+    padding:14px 18px 16px 18px; z-index:15;
+    background:linear-gradient(to top, rgba(8,9,11,0.85), rgba(8,9,11,0));
+    display:flex; flex-direction:column; gap:8px;
+  }
+  #controls.hidden{ display:none; }
+  #seek{
+    -webkit-appearance:none; appearance:none; width:100%; height:4px;
+    background:rgba(255,255,255,0.18); border-radius:2px; outline:none; cursor:pointer;
+  }
+  #seek::-webkit-slider-thumb{
+    -webkit-appearance:none; width:12px; height:12px; border-radius:50%;
+    background:var(--accent); cursor:pointer; margin-top:-4px;
+  }
+  #seek::-moz-range-thumb{ width:12px; height:12px; border-radius:50%; background:var(--accent); border:none; cursor:pointer; }
+  .controls-row{ display:flex; align-items:center; gap:10px; }
+  .icon-btn{
+    background:transparent; border:none; padding:6px; color:var(--text);
+    display:flex; align-items:center; justify-content:center; border-radius:6px;
+  }
+  .icon-btn:hover{ background:rgba(255,255,255,0.08); }
+  .icon-btn svg{ width:18px; height:18px; }
+  #time-label{ font-size:11.5px; color:var(--text-dim); font-variant-numeric:tabular-nums; min-width:82px; }
+  .spacer{ flex:1; }
+
+  /* ---------- Hotspots ---------- */
+  .hotspot{
+    position:absolute; transform:translate(-50%,-50%);
+    display:flex; align-items:center; gap:6px;
+    z-index:8; user-select:none;
+  }
+  .hotspot-dot{
+    width:26px; height:26px; border-radius:50%;
+    background:rgba(20,22,26,0.55); backdrop-filter:blur(3px);
+    border:1.5px solid var(--accent);
+    display:flex; align-items:center; justify-content:center;
+    cursor:pointer;
+    box-shadow:0 0 0 0 rgba(79,209,197,0.5);
+    animation:pulse 2.6s ease-in-out infinite;
+  }
+  .hotspot-dot svg{ width:12px; height:12px; }
+  .hotspot.type-info .hotspot-dot{ border-color:#E8C24F; }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(79,209,197,0.35); }
+    70%{ box-shadow:0 0 0 10px rgba(79,209,197,0); }
+    100%{ box-shadow:0 0 0 0 rgba(79,209,197,0); }
+  }
+  .hotspot-label{
+    background:rgba(20,22,26,0.85); backdrop-filter:blur(4px);
+    padding:5px 10px; border-radius:14px; font-size:12px; font-weight:500;
+    border:1px solid var(--border); white-space:nowrap; pointer-events:none;
+    opacity:0; transform:translateX(-4px); transition:opacity .12s, transform .12s;
+  }
+  .hotspot:hover .hotspot-label{ opacity:1; transform:translateX(0); }
+  .hotspot.editing .hotspot-dot{ border-color:var(--danger); }
+
+  /* ---------- Modal ---------- */
+  .modal-backdrop{
+    position:fixed; inset:0; background:rgba(8,9,11,0.6);
+    display:flex; align-items:center; justify-content:center; z-index:50;
+    backdrop-filter:blur(2px);
+  }
+  .modal{
+    background:var(--panel); border:1px solid var(--border); border-radius:10px;
+    width:340px; max-width:90vw; padding:18px;
+  }
+  .modal h3{ margin:0 0 4px 0; font-size:15px; }
+  .modal .sub{ margin:0 0 14px 0; font-size:12px; color:var(--text-dim); }
+  .field{ margin-bottom:12px; }
+  .field label{ display:block; font-size:11.5px; color:var(--text-dim); margin-bottom:5px; }
+  .field input[type=text], .field textarea, .field select{
+    width:100%; background:var(--panel-2); border:1px solid var(--border);
+    color:var(--text); border-radius:5px; padding:8px 9px; font-size:13px;
+    font-family:inherit; outline:none;
+  }
+  .field textarea{ resize:vertical; min-height:60px; }
+  .field-row{ display:flex; gap:8px; }
+  .field-row .field{ flex:1; }
+  .type-toggle{ display:flex; gap:6px; }
+  .type-toggle button{ flex:1; }
+  .type-toggle button.active{ background:var(--accent); color:#0A1413; border-color:var(--accent); }
+  .modal-actions{ display:flex; justify-content:space-between; margin-top:16px; gap:8px; }
+  .modal-actions .right{ display:flex; gap:8px; }
+
+  .info-popup{
+    position:absolute; max-width:280px;
+    background:rgba(20,22,26,0.92); backdrop-filter:blur(6px);
+    border:1px solid var(--border); border-radius:10px; padding:12px 14px;
+    font-size:13px; line-height:1.5; z-index:40;
+    transform:translate(-50%, -110%);
+  }
+  .info-popup h4{ margin:0 0 4px 0; font-size:13px; }
+  .info-popup p{ margin:0; color:var(--text-dim); font-size:12.5px; }
+
+  #loading-overlay{
+    position:absolute; inset:0; z-index:60; display:flex; align-items:center; justify-content:center;
+    background:rgba(10,11,13,0.55); backdrop-filter:blur(2px);
+  }
+  #loading-overlay.hidden{ display:none; }
+  .spinner{
+    width:26px; height:26px; border-radius:50%;
+    border:2.5px solid rgba(255,255,255,0.15); border-top-color:var(--accent);
+    animation:spin .7s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  #edit-hint{
+    position:absolute; top:60px; left:50%; transform:translateX(-50%);
+    background:rgba(79,209,197,0.12); border:1px solid var(--accent-dim);
+    color:var(--accent); padding:6px 14px; border-radius:20px; font-size:12px;
+    z-index:15; pointer-events:none; white-space:nowrap;
+  }
+  #edit-hint.hidden{ display:none; }
+
+  input[type=file]{ display:none; }
+
+  #gyro-btn.active{ color:var(--accent); }
+
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:var(--panel-2); border:1px solid var(--border); color:var(--text);
+    padding:9px 16px; border-radius:20px; font-size:12.5px; z-index:80;
+    opacity:0; transition:opacity .25s;
+  }
+  .toast.show{ opacity:1; }
+
+  @media (max-width:720px){
+    #sidebar{ position:absolute; height:100%; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="sidebar">
+    <div class="brand">
+      <h1>Panorama</h1>
+      <p>360&deg; tour builder</p>
+    </div>
+    <div class="scene-list" id="scene-list"></div>
+    <button class="add-scene-btn" id="add-scene-btn">+ Add scene from video</button>
+    <div class="sidebar-footer">
+      <button id="export-btn" title="Save tour layout as JSON">Export tour</button>
+      <button id="import-btn" title="Load a previously saved tour">Import tour</button>
+    </div>
+  </div>
+
+  <div id="viewport">
+    <div id="canvas-holder"></div>
+
+    <div id="empty-state">
+      <h2>Start your tour</h2>
+      <p>Add a scene using an equirectangular 360 video exported from the Insta360 app or Studio, then place hotspots to link scenes together.</p>
+      <button class="primary" id="empty-add-btn">+ Add your first scene</button>
+    </div>
+
+    <div id="topbar">
+      <div class="topbar-group">
+        <button id="sidebar-toggle" title="Toggle scene list">☰</button>
+        <div id="scene-title">No scene loaded</div>
+      </div>
+      <div class="topbar-group">
+        <div class="mode-pill">
+          <button id="mode-play" class="active">▶ Play</button>
+          <button id="mode-edit">✎ Edit hotspots</button>
+        </div>
+        <button id="gyro-btn" title="Toggle motion look (mobile)">⟲</button>
+      </div>
+    </div>
+
+    <div id="edit-hint" class="hidden">Click anywhere on the video to drop a hotspot</div>
+
+    <div id="controls">
+      <input type="range" id="seek" min="0" max="100" value="0" step="0.1">
+      <div class="controls-row">
+        <button class="icon-btn" id="play-btn" title="Play/Pause">
+          <svg viewBox="0 0 24 24" fill="currentColor" id="play-icon"><path d="M8 5v14l11-7z"/></svg>
+        </button>
+        <button class="icon-btn" id="mute-btn" title="Mute/Unmute">
+          <svg viewBox="0 0 24 24" fill="currentColor" id="mute-icon"><path d="M3 10v4h4l5 5V5L7 10H3zm13.5 2A4.5 4.5 0 0 0 14 7.97v8.05A4.48 4.48 0 0 0 16.5 12z"/></svg>
+        </button>
+        <div id="time-label">0:00 / 0:00</div>
+        <div class="spacer"></div>
+        <button class="icon-btn" id="fullscreen-btn" title="Fullscreen">
+          <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="loading-overlay" class="hidden"><div class="spinner"></div></div>
+  </div>
+</div>
+
+<input type="file" id="file-input" accept="video/*" multiple>
+<input type="file" id="import-file-input" accept="application/json">
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/* ===================== State ===================== */
+const state = {
+  scenes: [],          // {id,name,fileName,video,texture,mesh,hotspots:[],yaw,pitch, hasStarted}
+  activeSceneId: null,
+  mode: 'play',         // 'play' | 'edit'
+  isDragging: false,
+  yaw: 0, pitch: 0,       // camera orientation, degrees
+  fov: 90,
+  gyroEnabled: false,
+  pendingHotspotPos: null, // {yaw,pitch} while modal open
+  editingHotspotId: null,
+};
+
+let idCounter = 1;
+const nextId = (prefix) => `${prefix}-${idCounter++}`;
+
+/* ===================== Three.js setup ===================== */
+const holder = document.getElementById('canvas-holder');
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+holder.appendChild(renderer.domElement);
+
+const scene3d = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(state.fov, 1, 0.1, 1100);
+
+const sphereGeo = new THREE.SphereGeometry(500, 60, 40);
+sphereGeo.scale(-1, 1, 1); // invert so texture renders on inside
+
+function resizeRenderer(){
+  const w = holder.clientWidth, h = holder.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resizeRenderer);
+
+function updateCameraLook(){
+  const yawRad = THREE.MathUtils.degToRad(state.yaw);
+  const pitchRad = THREE.MathUtils.degToRad(state.pitch);
+  const x = Math.cos(pitchRad) * Math.sin(yawRad);
+  const y = Math.sin(pitchRad);
+  const z = Math.cos(pitchRad) * Math.cos(yawRad);
+  camera.lookAt(camera.position.x + x, camera.position.y + y, camera.position.z + z);
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  camera.fov = state.fov;
+  camera.updateProjectionMatrix();
+  updateCameraLook();
+  renderer.render(scene3d, camera);
+  updateHotspotPositions();
+}
+
+/* ===================== Scene management ===================== */
+function createSceneObject(file){
+  const video = document.createElement('video');
+  video.src = URL.createObjectURL(file);
+  video.crossOrigin = 'anonymous';
+  video.loop = true;
+  video.muted = false;
+  video.playsInline = true;
+  video.preload = 'auto';
+
+  const texture = new THREE.VideoTexture(video);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const material = new THREE.MeshBasicMaterial({ map: texture });
+  const mesh = new THREE.Mesh(sphereGeo, material);
+  mesh.visible = false;
+  scene3d.add(mesh);
+
+  return {
+    id: nextId('scene'),
+    name: file.name.replace(/\.[^/.]+$/, ''),
+    fileName: file.name,
+    video, texture, mesh,
+    hotspots: [],
+    yaw: 0, pitch: 0,
+    linked: true,
+  };
+}
+
+function addScenesFromFiles(fileList){
+  const files = Array.from(fileList);
+  let firstNew = null;
+  files.forEach(file => {
+    const s = createSceneObject(file);
+    state.scenes.push(s);
+    if (!firstNew) firstNew = s;
+  });
+  renderSceneList();
+  if (firstNew) switchToScene(firstNew.id);
+  document.getElementById('empty-state').style.display = 'none';
+}
+
+function switchToScene(id){
+  const prev = getActiveScene();
+  if (prev){ prev.video.pause(); prev.mesh.visible = false; }
+
+  const s = state.scenes.find(sc => sc.id === id);
+  if (!s) return;
+  state.activeSceneId = id;
+  s.mesh.visible = true;
+  state.yaw = s.yaw; state.pitch = s.pitch;
+
+  document.getElementById('scene-title').textContent = s.name;
+  document.getElementById('loading-overlay').classList.remove('hidden');
+
+  const startPlayback = () => {
+    document.getElementById('loading-overlay').classList.add('hidden');
+    s.video.play().catch(()=>{ /* needs user gesture */ });
+    updatePlayIcon();
+  };
+  if (s.video.readyState >= 2) startPlayback();
+  else s.video.addEventListener('loadeddata', startPlayback, { once:true });
+
+  renderSceneList();
+  renderHotspots();
+}
+
+function getActiveScene(){
+  return state.scenes.find(s => s.id === state.activeSceneId);
+}
+
+function removeScene(id){
+  const s = state.scenes.find(sc => sc.id === id);
+  if (!s) return;
+  if (!confirm(`Remove scene "${s.name}"? Hotspots pointing to it will be cleared.`)) return;
+  scene3d.remove(s.mesh);
+  s.video.pause();
+  state.scenes = state.scenes.filter(sc => sc.id !== id);
+  state.scenes.forEach(sc => {
+    sc.hotspots = sc.hotspots.filter(h => h.targetSceneId !== id);
+  });
+  if (state.activeSceneId === id){
+    state.activeSceneId = null;
+    if (state.scenes.length) switchToScene(state.scenes[0].id);
+    else {
+      document.getElementById('scene-title').textContent = 'No scene loaded';
+      document.getElementById('empty-state').style.display = 'flex';
+      document.querySelectorAll('.hotspot').forEach(el => el.remove());
+    }
+  }
+  renderSceneList();
+}
+
+/* ===================== Sidebar UI ===================== */
+const sceneListEl = document.getElementById('scene-list');
+
+function renderSceneList(){
+  sceneListEl.innerHTML = '';
+  state.scenes.forEach(s => {
+    const item = document.createElement('div');
+    item.className = 'scene-item' + (s.id === state.activeSceneId ? ' active' : '');
+
+    const thumb = document.createElement('div');
+    thumb.className = 'scene-thumb';
+    const vid = document.createElement('video');
+    vid.src = s.video.src; vid.muted = true; vid.playsInline = true;
+    vid.addEventListener('loadeddata', () => { vid.currentTime = 0.1; });
+    thumb.appendChild(vid);
+    item.appendChild(thumb);
+
+    const name = document.createElement('div');
+    name.className = 'scene-name';
+    name.textContent = s.name;
+    name.title = 'Double-click to rename';
+    name.ondblclick = (e) => {
+      e.stopPropagation();
+      const input = document.createElement('input');
+      input.className = 'rename'; input.value = s.name;
+      name.replaceWith(input); input.focus(); input.select();
+      const commit = () => { s.name = input.value.trim() || s.name; renderSceneList(); if (s.id===state.activeSceneId) document.getElementById('scene-title').textContent = s.name; };
+      input.onblur = commit;
+      input.onkeydown = (ev) => { if (ev.key==='Enter') input.blur(); };
+    };
+    item.appendChild(name);
+
+    const count = document.createElement('div');
+    count.className = 'scene-count';
+    count.textContent = s.hotspots.length ? `${s.hotspots.length}◆` : '';
+    item.appendChild(count);
+
+    const del = document.createElement('button');
+    del.className = 'danger-text'; del.textContent = '✕';
+    del.style.padding = '2px 6px'; del.style.fontSize='12px';
+    del.onclick = (e) => { e.stopPropagation(); removeScene(s.id); };
+    item.appendChild(del);
+
+    item.onclick = () => switchToScene(s.id);
+    sceneListEl.appendChild(item);
+  });
+}
+
+document.getElementById('add-scene-btn').onclick = () => document.getElementById('file-input').click();
+document.getElementById('empty-add-btn').onclick = () => document.getElementById('file-input').click();
+document.getElementById('file-input').onchange = (e) => { if (e.target.files.length) addScenesFromFiles(e.target.files); e.target.value=''; };
+document.getElementById('sidebar-toggle').onclick = () => document.getElementById('sidebar').classList.toggle('collapsed');
+
+/* ===================== Look controls (drag / touch / gyro) ===================== */
+let dragStart = null;
+holder.addEventListener('pointerdown', (e) => {
+  if (state.mode === 'edit') return; // clicks handled separately in edit mode
+  state.isDragging = true;
+  holder.classList.add('dragging');
+  dragStart = { x: e.clientX, y: e.clientY, yaw: state.yaw, pitch: state.pitch };
+});
+window.addEventListener('pointermove', (e) => {
+  if (!state.isDragging || !dragStart) return;
+  const dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
+  state.yaw = dragStart.yaw - dx * 0.15;
+  state.pitch = Math.max(-89, Math.min(89, dragStart.pitch + dy * 0.15));
+});
+window.addEventListener('pointerup', () => { state.isDragging = false; holder.classList.remove('dragging'); });
+
+holder.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  state.fov = Math.max(40, Math.min(100, state.fov + e.deltaY * 0.04));
+}, { passive:false });
+
+const gyroBtn = document.getElementById('gyro-btn');
+gyroBtn.onclick = async () => {
+  if (!state.gyroEnabled){
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
+      try { const res = await DeviceOrientationEvent.requestPermission(); if (res !== 'granted') return; } catch(e){ return; }
+    }
+    window.addEventListener('deviceorientation', onDeviceOrientation);
+    state.gyroEnabled = true; gyroBtn.classList.add('active');
+  } else {
+    window.removeEventListener('deviceorientation', onDeviceOrientation);
+    state.gyroEnabled = false; gyroBtn.classList.remove('active');
+  }
+};
+let gyroBase = null;
+function onDeviceOrientation(e){
+  if (e.alpha == null) return;
+  if (!gyroBase) gyroBase = e.alpha;
+  state.yaw = -(e.alpha - gyroBase);
+  state.pitch = Math.max(-89, Math.min(89, (e.beta || 0) - 90));
+}
+
+/* ===================== Playback controls ===================== */
+const playBtn = document.getElementById('play-btn');
+const playIcon = document.getElementById('play-icon');
+const muteBtn = document.getElementById('mute-btn');
+const muteIcon = document.getElementById('mute-icon');
+const seek = document.getElementById('seek');
+const timeLabel = document.getElementById('time-label');
+
+function fmtTime(t){
+  if (!isFinite(t)) return '0:00';
+  const m = Math.floor(t/60), s = Math.floor(t%60);
+  return `${m}:${s.toString().padStart(2,'0')}`;
+}
+function updatePlayIcon(){
+  const s = getActiveScene(); if (!s) return;
+  playIcon.innerHTML = s.video.paused
+    ? '<path d="M8 5v14l11-7z"/>'
+    : '<path d="M6 5h4v14H6zM14 5h4v14h-4z"/>';
+}
+playBtn.onclick = () => {
+  const s = getActiveScene(); if (!s) return;
+  if (s.video.paused) s.video.play(); else s.video.pause();
+  updatePlayIcon();
+};
+muteBtn.onclick = () => {
+  const s = getActiveScene(); if (!s) return;
+  s.video.muted = !s.video.muted;
+  muteIcon.innerHTML = s.video.muted
+    ? '<path d="M16.5 12A4.5 4.5 0 0 0 14 7.97v2.21l2.45 2.45c.03-.2.05-.42.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0 0 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3 3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 0 0 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4 9.91 6.09 12 8.18V4z"/>'
+    : '<path d="M3 10v4h4l5 5V5L7 10H3zm13.5 2A4.5 4.5 0 0 0 14 7.97v8.05A4.48 4.48 0 0 0 16.5 12z"/>';
+};
+seek.addEventListener('input', () => {
+  const s = getActiveScene(); if (!s || !isFinite(s.video.duration)) return;
+  s.video.currentTime = (seek.value/100) * s.video.duration;
+});
+setInterval(() => {
+  const s = getActiveScene(); if (!s || !isFinite(s.video.duration) || state.isDragging) return;
+  if (document.activeElement !== seek) seek.value = (s.video.currentTime / s.video.duration) * 100 || 0;
+  timeLabel.textContent = `${fmtTime(s.video.currentTime)} / ${fmtTime(s.video.duration)}`;
+}, 250);
+
+document.getElementById('fullscreen-btn').onclick = () => {
+  if (!document.fullscreenElement) document.getElementById('viewport').requestFullscreen();
+  else document.exitFullscreen();
+};
+
+/* ===================== Mode switching ===================== */
+const modePlayBtn = document.getElementById('mode-play');
+const modeEditBtn = document.getElementById('mode-edit');
+const editHint = document.getElementById('edit-hint');
+
+function setMode(mode){
+  state.mode = mode;
+  modePlayBtn.classList.toggle('active', mode==='play');
+  modeEditBtn.classList.toggle('active', mode==='edit');
+  holder.classList.toggle('edit-mode', mode==='edit');
+  editHint.classList.toggle('hidden', mode!=='edit');
+}
+modePlayBtn.onclick = () => setMode('play');
+modeEditBtn.onclick = () => setMode('edit');
+
+/* Convert a click on the canvas to yaw/pitch on the sphere via raycasting */
+const raycaster = new THREE.Raycaster();
+holder.addEventListener('click', (e) => {
+  if (state.mode !== 'edit') return;
+  const s = getActiveScene(); if (!s) return;
+  const rect = holder.getBoundingClientRect();
+  const mouse = new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  );
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObject(s.mesh);
+  if (!hits.length) return;
+  const p = hits[0].point.clone().normalize();
+  const yaw = THREE.MathUtils.radToDeg(Math.atan2(p.x, p.z));
+  const pitch = THREE.MathUtils.radToDeg(Math.asin(p.y));
+  openHotspotModal({ yaw, pitch });
+});
+
+/* ===================== Hotspot modal ===================== */
+const modalRoot = document.getElementById('app');
+function openHotspotModal(pos, existingHotspot){
+  state.pendingHotspotPos = pos;
+  state.editingHotspotId = existingHotspot ? existingHotspot.id : null;
+  const s = getActiveScene(); if (!s) return;
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  const otherScenes = state.scenes.filter(sc => sc.id !== s.id);
+
+  backdrop.innerHTML = `
+    <div class="modal">
+      <h3>${existingHotspot ? 'Edit hotspot' : 'New hotspot'}</h3>
+      <p class="sub">${existingHotspot ? 'Update or remove this hotspot.' : 'Choose what happens when a viewer clicks this spot.'}</p>
+      <div class="field">
+        <label>Label</label>
+        <input type="text" id="hs-label" placeholder="e.g. Enter kitchen" value="${existingHotspot ? escapeHtml(existingHotspot.label) : ''}">
+      </div>
+      <div class="field">
+        <label>Type</label>
+        <div class="type-toggle">
+          <button type="button" data-type="jump" class="${(!existingHotspot || existingHotspot.type==='jump') ? 'active' : ''}">Jump to scene</button>
+          <button type="button" data-type="info" class="${(existingHotspot && existingHotspot.type==='info') ? 'active' : ''}">Info popup</button>
+        </div>
+      </div>
+      <div class="field" id="hs-target-field" style="${(existingHotspot && existingHotspot.type==='info') ? 'display:none' : ''}">
+        <label>Target scene</label>
+        <select id="hs-target">
+          ${otherScenes.map(sc => `<option value="${sc.id}" ${existingHotspot && existingHotspot.targetSceneId===sc.id ? 'selected':''}>${escapeHtml(sc.name)}</option>`).join('') || '<option disabled>Add another scene first</option>'}
+        </select>
+      </div>
+      <div class="field" id="hs-info-field" style="${(!existingHotspot || existingHotspot.type!=='info') ? 'display:none' : ''}">
+        <label>Info text</label>
+        <textarea id="hs-info" placeholder="Text shown when clicked">${existingHotspot ? escapeHtml(existingHotspot.infoText||'') : ''}</textarea>
+      </div>
+      <div class="modal-actions">
+        <div>${existingHotspot ? '<button type="button" id="hs-delete" class="danger-text">Delete</button>' : ''}</div>
+        <div class="right">
+          <button type="button" id="hs-cancel" class="ghost">Cancel</button>
+          <button type="button" id="hs-save" class="primary">Save</button>
+        </div>
+      </div>
+    </div>
+  `;
+  modalRoot.appendChild(backdrop);
+
+  let chosenType = existingHotspot ? existingHotspot.type : 'jump';
+  backdrop.querySelectorAll('.type-toggle button').forEach(btn => {
+    btn.onclick = () => {
+      chosenType = btn.dataset.type;
+      backdrop.querySelectorAll('.type-toggle button').forEach(b => b.classList.toggle('active', b===btn));
+      backdrop.querySelector('#hs-target-field').style.display = chosenType==='jump' ? '' : 'none';
+      backdrop.querySelector('#hs-info-field').style.display = chosenType==='info' ? '' : 'none';
+    };
+  });
+
+  const close = () => backdrop.remove();
+  backdrop.querySelector('#hs-cancel').onclick = close;
+  backdrop.addEventListener('mousedown', (e) => { if (e.target===backdrop) close(); });
+
+  if (existingHotspot){
+    backdrop.querySelector('#hs-delete').onclick = () => {
+      s.hotspots = s.hotspots.filter(h => h.id !== existingHotspot.id);
+      renderHotspots(); renderSceneList(); close();
+    };
+  }
+
+  backdrop.querySelector('#hs-save').onclick = () => {
+    const label = backdrop.querySelector('#hs-label').value.trim() || 'Untitled';
+    const targetSelect = backdrop.querySelector('#hs-target');
+    const targetSceneId = targetSelect && !targetSelect.disabled ? targetSelect.value : null;
+    const infoText = backdrop.querySelector('#hs-info').value.trim();
+
+    if (chosenType==='jump' && !targetSceneId){ toast('Add another scene first, or choose Info popup.'); return; }
+
+    if (existingHotspot){
+      existingHotspot.label = label; existingHotspot.type = chosenType;
+      existingHotspot.targetSceneId = targetSceneId; existingHotspot.infoText = infoText;
+    } else {
+      s.hotspots.push({
+        id: nextId('hs'), label, type: chosenType,
+        yaw: pos.yaw, pitch: pos.pitch,
+        targetSceneId: chosenType==='jump' ? targetSceneId : null,
+        infoText: chosenType==='info' ? infoText : '',
+      });
+    }
+    renderHotspots(); renderSceneList(); close();
+  };
+}
+function escapeHtml(str){ const d=document.createElement('div'); d.textContent=str; return d.innerHTML; }
+
+function toast(msg){
+  const t = document.createElement('div');
+  t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t);
+  requestAnimationFrame(() => t.classList.add('show'));
+  setTimeout(() => { t.classList.remove('show'); setTimeout(()=>t.remove(), 300); }, 2200);
+}
+
+/* ===================== Hotspot rendering (screen-space overlay) ===================== */
+const hotspotEls = new Map(); // hotspot.id -> element
+
+function renderHotspots(){
+  document.querySelectorAll('.hotspot').forEach(el => el.remove());
+  hotspotEls.clear();
+  const s = getActiveScene(); if (!s) return;
+  s.hotspots.forEach(h => {
+    const el = document.createElement('div');
+    el.className = 'hotspot type-' + h.type;
+    el.innerHTML = `
+      <div class="hotspot-dot">${h.type==='jump'
+        ? '<svg viewBox="0 0 24 24" fill="none" stroke="#4FD1C5" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>'
+        : '<svg viewBox="0 0 24 24" fill="#E8C24F"><circle cx="12" cy="12" r="10" fill="none" stroke="#E8C24F" stroke-width="2"/><text x="12" y="16" font-size="12" text-anchor="middle" fill="#E8C24F">i</text></svg>'}</div>
+      <div class="hotspot-label">${escapeHtml(h.label)}</div>
+    `;
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.mode === 'edit'){ openHotspotModal({yaw:h.yaw,pitch:h.pitch}, h); return; }
+      if (h.type === 'jump' && h.targetSceneId) switchToScene(h.targetSceneId);
+      else if (h.type === 'info') showInfoPopup(h, el);
+    });
+    document.getElementById('viewport').appendChild(el);
+    hotspotEls.set(h.id, el);
+  });
+}
+
+function showInfoPopup(h, anchorEl){
+  document.querySelectorAll('.info-popup').forEach(p => p.remove());
+  const rect = anchorEl.getBoundingClientRect();
+  const viewportRect = document.getElementById('viewport').getBoundingClientRect();
+  const popup = document.createElement('div');
+  popup.className = 'info-popup';
+  popup.style.left = (rect.left - viewportRect.left + rect.width/2) + 'px';
+  popup.style.top = (rect.top - viewportRect.top) + 'px';
+  popup.innerHTML = `<h4>${escapeHtml(h.label)}</h4><p>${escapeHtml(h.infoText || '')}</p>`;
+  document.getElementById('viewport').appendChild(popup);
+  setTimeout(() => document.addEventListener('click', function handler(){ popup.remove(); document.removeEventListener('click', handler); }, {once:true}), 10);
+}
+
+const projVec = new THREE.Vector3();
+function updateHotspotPositions(){
+  const s = getActiveScene(); if (!s) return;
+  const rect = holder.getBoundingClientRect();
+  s.hotspots.forEach(h => {
+    const el = hotspotEls.get(h.id); if (!el) return;
+    const yawRad = THREE.MathUtils.degToRad(h.yaw);
+    const pitchRad = THREE.MathUtils.degToRad(h.pitch);
+    projVec.set(
+      490 * Math.cos(pitchRad) * Math.sin(yawRad),
+      490 * Math.sin(pitchRad),
+      490 * Math.cos(pitchRad) * Math.cos(yawRad)
+    );
+    const behind = projVec.clone().sub(camera.position).normalize().dot(camera.getWorldDirection(new THREE.Vector3())) < 0;
+    projVec.project(camera);
+    const x = (projVec.x * 0.5 + 0.5) * rect.width;
+    const y = (-projVec.y * 0.5 + 0.5) * rect.height;
+    if (behind || projVec.z > 1){
+      el.style.display = 'none';
+    } else {
+      el.style.display = 'flex';
+      el.style.left = x + 'px';
+      el.style.top = y + 'px';
+    }
+  });
+}
+
+/* ===================== Export / Import ===================== */
+document.getElementById('export-btn').onclick = () => {
+  if (!state.scenes.length){ toast('Add at least one scene first.'); return; }
+  const data = {
+    version: 1,
+    scenes: state.scenes.map(s => ({
+      id: s.id, name: s.name, fileName: s.fileName,
+      hotspots: s.hotspots.map(h => ({ ...h })),
+    })),
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type:'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'tour-layout.json';
+  a.click();
+  toast('Tour layout saved. Keep this JSON with your video files.');
+};
+
+document.getElementById('import-btn').onclick = () => document.getElementById('import-file-input').click();
+document.getElementById('import-file-input').onchange = async (e) => {
+  const file = e.target.files[0]; e.target.value='';
+  if (!file) return;
+  const text = await file.text();
+  let data;
+  try { data = JSON.parse(text); } catch(err){ toast('Could not read that file.'); return; }
+  toast('Layout loaded — now select the matching video files.');
+  pendingImport = data;
+  document.getElementById('file-input').setAttribute('data-import','1');
+  document.getElementById('file-input').click();
+};
+
+let pendingImport = null;
+const origFileInputHandler = document.getElementById('file-input').onchange;
+document.getElementById('file-input').addEventListener('change', function importAwareHandler(e){
+  if (this.getAttribute('data-import') !== '1') return;
+  this.removeAttribute('data-import');
+  const files = Array.from(e.target.files);
+  if (!pendingImport){ return; }
+  const byName = new Map(files.map(f => [f.name, f]));
+  let matched = 0;
+  pendingImport.scenes.forEach(sceneData => {
+    const file = byName.get(sceneData.fileName);
+    if (!file) return;
+    matched++;
+    const s = createSceneObject(file);
+    s.id = sceneData.id || s.id;
+    s.name = sceneData.name || s.name;
+    s.hotspots = (sceneData.hotspots || []).map(h => ({ ...h }));
+    state.scenes.push(s);
+  });
+  renderSceneList();
+  if (state.scenes.length){
+    document.getElementById('empty-state').style.display = 'none';
+    switchToScene(state.scenes[0].id);
+  }
+  toast(matched ? `Matched ${matched} scene(s) from the layout.` : 'No filenames matched — check you selected the original videos.');
+  pendingImport = null;
+});
+
+/* ===================== Kick off ===================== */
+resizeRenderer();
+setMode('play');
+animate();
+</script>
+</body>
+</html>
